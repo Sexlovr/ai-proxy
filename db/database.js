@@ -7,26 +7,34 @@ const crypto   = require("crypto");
 const os       = require("os");
 
 function pickDataDir() {
+  const envDataDir = process.env.DATA_DIR;
   const candidates = [
+    envDataDir,
     "/data",
     path.join(__dirname, "..", "data"),
-  ];
+  ].filter(Boolean);
 
   for (const dir of candidates) {
     try {
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
       fs.accessSync(dir, fs.constants.W_OK);
 
       const testFile = path.join(dir, ".__write_test");
       fs.writeFileSync(testFile, "ok");
       fs.unlinkSync(testFile);
 
+      console.log(`[db] using data directory: ${dir}`);
       return dir;
-    } catch (_) {}
+    } catch (err) {
+      console.warn(`[db] candidate directory ${dir} not usable: ${err.message}`);
+    }
   }
 
   const tmp = path.join(os.tmpdir(), "proxy-data");
-  fs.mkdirSync(tmp, { recursive: true });
+  if (!fs.existsSync(tmp)) fs.mkdirSync(tmp, { recursive: true });
+  console.log(`[db] falling back to tmp directory: ${tmp}`);
   return tmp;
 }
 

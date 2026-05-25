@@ -104,12 +104,22 @@ router.post("/api/providers", (req, res) => {
   let url = base_url.trim().replace(/\/+$/, "");
   if (!url.endsWith("/v1")) return res.status(400).json({ error: "base_url must end with /v1" });
 
-  const existingCount = stmts.getAllProviders.all().length;
-  const provider_id   = `provider_${existingCount + 1}`;
+  const providers = stmts.getAllProviders.all();
+  let maxNum = 0;
+  for (const p of providers) {
+    const match = p.provider_id.match(/^provider_(\d+)$/);
+    if (match) {
+      const n = parseInt(match[1], 10);
+      if (n > maxNum) maxNum = n;
+    }
+  }
+
+  const nextNum     = maxNum + 1;
+  const provider_id = `provider_${nextNum}`;
 
   stmts.insertProvider.run({
     provider_id,
-    nickname: nickname?.trim() || `Provider ${existingCount + 1}`,
+    nickname: nickname?.trim() || `Provider ${nextNum}`,
     base_url: url,
   });
 
