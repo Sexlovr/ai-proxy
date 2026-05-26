@@ -50,13 +50,11 @@ function buildLiveModelMap() {
 // ─── KEY ROTATION ─────────────────────────────────────────────────────────────
 const keyIndexMap = {};
 
-function getKeyIndex(provider_id) {
+function getAndAdvanceKeyIndex(provider_id, total) {
   if (keyIndexMap[provider_id] === undefined) keyIndexMap[provider_id] = 0;
-  return keyIndexMap[provider_id];
-}
-
-function advanceKeyIndex(provider_id, to) {
-  keyIndexMap[provider_id] = to;
+  const current = keyIndexMap[provider_id];
+  keyIndexMap[provider_id] = (current + 1) % total;
+  return current;
 }
 
 async function fetchWithRotation(provider_id, url, options) {
@@ -75,7 +73,7 @@ async function fetchWithRotation(provider_id, url, options) {
 
   const total    = keys.length;
   let   lastRes  = null;
-  let   startIdx = getKeyIndex(provider_id);
+  let   startIdx = getAndAdvanceKeyIndex(provider_id, total);
 
   for (let attempt = 0; attempt < total; attempt++) {
     const idx = (startIdx + attempt) % total;
@@ -90,7 +88,6 @@ async function fetchWithRotation(provider_id, url, options) {
     });
 
     if (res.status !== 429) {
-      advanceKeyIndex(provider_id, (idx + 1) % total);
       try {
         stmts.bumpKeyUsed.run(provider_id, key);
       } catch(_) {}
