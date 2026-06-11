@@ -17,7 +17,7 @@ function pickDataDir() {
       console.warn("[db] DATA_DIR not writable: " + err.message + " — falling back");
     }
   }
-  for (const dir of ["/data", "/home/node/data"]) {
+  for (const dir of ["/data", "../data"]) {
     try {
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
       fs.accessSync(dir, fs.constants.W_OK);
