@@ -179,6 +179,7 @@ function requireSpaceAuth(req, res, next) {
   if (req.path.startsWith("/v1/") || req.path === "/v1/models") return next();
   if (req.path.startsWith("/admin")) return next();
   if (req.path === "/health") return next();
+  if (req.path === "/api/info") return next();
   if (req.cookies?.space_token === SPACE_PASSWORD) return next();
   if (req.query.space_key === SPACE_PASSWORD) return next();
   if (req.method === "GET" && (req.path === "/" || req.path.endsWith(".html") || req.path === ""))
@@ -293,6 +294,8 @@ app.all("/v1/*", requireProxyAuth, async (req, res) => {
 });
 
 app.get("/", (_req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
+app.get("/api/info", (_req, res) => res.json({ base_url: (_req.protocol + "://" + _req.get("host") + "/v1"), proxy_key: PROXY_KEY }));
+
 app.use((_req, res) => res.status(404).json(ERR[404]));
 
 app.listen(PORT, () => console.log(`[proxy] listening :${PORT} | /admin | /v1/models | /health`));

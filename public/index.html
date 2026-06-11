@@ -73,10 +73,12 @@
 </footer>
 <div class="toast" id="toast"></div>
 <script>
-const PROXY_KEY = "want-free-ai?here-you-go-gemini";
+let PROXY_KEY = "loading…";
 const BASE_URL  = window.location.origin + "/v1";
 document.getElementById("base-url").textContent  = BASE_URL;
 document.getElementById("footer-url").textContent = BASE_URL;
+
+fetch("/api/info").then(r=>r.json()).then(d=>{ PROXY_KEY=d.proxy_key; document.getElementById("kv").textContent=PROXY_KEY; }).catch(()=>{});
 
 async function loadModels() {
   const grid = document.getElementById("grid");
