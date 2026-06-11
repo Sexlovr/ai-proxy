@@ -348,6 +348,9 @@ tr:hover td{background:var(--surface2)}
     <button class="nav-tab"        data-tab="keys"      onclick="switchTab(this)">🔑 Keys</button>
     <button class="nav-tab"        data-tab="providers" onclick="switchTab(this)">🌐 Providers</button>
     <button class="nav-tab"        data-tab="mappings"  onclick="switchTab(this)">🗂️ Mappings</button>
+    <button class="nav-tab" data-tab="tokens" onclick="switchTab(this)">📊 Tokens</button>
+    <button class="nav-tab" data-tab="errorlog" onclick="switchTab(this)">📋 Error Log</button>
+
   </div>
 
   <!-- Content area -->
@@ -639,6 +642,65 @@ tr:hover td{background:var(--surface2)}
     </div>
 
   </div><!-- /content -->
+
+    <!-- ── TOKEN USAGE TAB ── -->
+    <div id="tab-tokens" style="display:none">
+      <div class="stat-grid" id="token-stat-grid">
+        <div class="stat-card" style="--accent-color:#a78bfa">
+          <div class="stat-label">Total Tokens</div>
+          <div class="stat-value" id="tk-total">—</div>
+          <div class="stat-sub" id="tk-window-label">selected window</div>
+          <div class="stat-icon">🪙</div>
+        </div>
+        <div class="stat-card" style="--accent-color:#6366f1">
+          <div class="stat-label">Prompt Tokens</div>
+          <div class="stat-value" id="tk-prompt">—</div>
+          <div class="stat-sub">input</div>
+          <div class="stat-icon">📥</div>
+        </div>
+        <div class="stat-card" style="--accent-color:#22c55e">
+          <div class="stat-label">Completion Tokens</div>
+          <div class="stat-value" id="tk-completion">—</div>
+          <div class="stat-sub">output</div>
+          <div class="stat-icon">📤</div>
+        </div>
+        <div class="stat-card" style="--accent-color:#38bdf8">
+          <div class="stat-label">Tracked Requests</div>
+          <div class="stat-value" id="tk-reqs">—</div>
+          <div class="stat-sub">with usage data</div>
+          <div class="stat-icon">📊</div>
+        </div>
+      </div>
+      <div class="table-card">
+        <div class="table-head">
+          <span class="table-title">Tokens by Model</span>
+          <input type="text" id="token-filter" placeholder="🔍 filter…" oninput="filterTable('token-tbody', this.value, 0)" style="padding:.4rem .8rem;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-size:.8rem;outline:none;width:180px">
+        </div>
+        <div class="table-wrap">
+          <table><thead><tr><th>Model</th><th>Requests</th><th>Prompt Tokens</th><th>Completion</th><th>Total</th><th>Avg/Req</th><th>Last</th></tr></thead>
+            <tbody id="token-tbody"><tr><td class="empty-row" colspan="7">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ── ERROR LOG TAB ── -->
+    <div id="tab-errorlog" style="display:none">
+      <div class="table-card">
+        <div class="table-head"><span class="table-title">Error Summary</span></div>
+        <div class="table-wrap"><table><thead><tr><th>Error Code</th><th>Count</th><th>Last Occurred</th></tr></thead>
+          <tbody id="errorlog-stats-tbody"><tr><td class="empty-row" colspan="3">Loading…</td></tr></tbody>
+        </table></div>
+      </div>
+      <div class="table-card" style="margin-top:1.5rem">
+        <div class="table-head"><span class="table-title">Recent Errors</span></div>
+        <div class="table-wrap"><table><thead><tr><th>Time</th><th>Code</th><th>Model</th><th>Detail</th></tr></thead>
+          <tbody id="errorlog-recent-tbody"><tr><td class="empty-row" colspan="4">Loading…</td></tr></tbody>
+        </table></div>
+      </div>
+    </div>
+
 </div><!-- /dashboard -->
 
 <!-- Toast container -->
@@ -738,6 +800,8 @@ function renderAll() {
   renderKeys();
   renderProviders();
   renderMappings();
+  renderTokens();
+  renderErrorLog();
   populateProviderSelects();
 }
 
@@ -1124,6 +1188,37 @@ function renderMappings() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TOKEN USAGE
+// ═══════════════════════════════════════════════════════════════════════════════
+async function renderTokens() {
+  try {
+    const res = await fetch(`/admin/api/tokens?window=${currentWindow}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const s = data.summary || {};
+    document.getElementById("tk-total").textContent = fmtNum(s.tokens || 0);
+    document.getElementById("tk-prompt").textContent = fmtNum(s.prompt || 0);
+    document.getElementById("tk-completion").textContent = fmtNum(s.completion || 0);
+    document.getElementById("tk-reqs").textContent = fmtNum(s.reqs || 0);
+    const w = {3600:"last 1h",21600:"last 6h",86400:"last 24h",604800:"last 7d"};
+    document.getElementById("tk-window-label").textContent = w[currentWindow] || "";
+    const tbody = document.getElementById("token-tbody");
+    const models = data.models || [];
+    if (!models.length) { tbody.innerHTML = '<tr><td class="empty-row" colspan="7">No token data yet.</td></tr>'; return; }
+    tbody.innerHTML = models.map(r => `<tr>
+      <td class="td-mono">${esc(r.model)}</td>
+      <td>${fmtNum(r.requests)}</td>
+      <td style="color:var(--blue)">${fmtNum(r.total_prompt)}</td>
+      <td style="color:var(--green)">${fmtNum(r.total_completion)}</td>
+      <td><strong>${fmtNum(r.grand_total)}</strong></td>
+      <td style="color:var(--muted)">${r.requests ? Math.round(r.grand_total/r.requests) : "—"}</td>
+      <td style="color:var(--muted)">${r.last_used ? timeAgo(r.last_used) : "—"}</td>
+    </tr>`).join("");
+  } catch(_) {}
+}
+
 // PROVIDER SELECT DROPDOWNS (for add-mapping forms)
 // ═══════════════════════════════════════════════════════════════════════════════
 function populateProviderSelects() {
@@ -1139,6 +1234,37 @@ function populateProviderSelects() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ERROR LOG
+// ═══════════════════════════════════════════════════════════════════════════════
+async function renderErrorLog() {
+  try {
+    const res = await fetch(`/admin/api/error-log?window=${currentWindow}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const statsTbody = document.getElementById("errorlog-stats-tbody");
+    const recentTbody = document.getElementById("errorlog-recent-tbody");
+    const stats = data.stats || [];
+    if (!stats.length) { statsTbody.innerHTML = '<tr><td class="empty-row" colspan="3">🎉 No errors!</td></tr>'; }
+    else {
+      statsTbody.innerHTML = stats.map(r => `<tr>
+        <td><span style="color:var(--red);font-weight:700;font-family:monospace">${esc(r.error_code)}</span></td>
+        <td><strong style="color:var(--red)">${fmtNum(r.count)}</strong></td>
+        <td style="color:var(--muted)">${r.last_at ? timeAgo(r.last_at) : "—"}</td>
+      </tr>`).join("");
+    }
+    const recent = data.recent || [];
+    if (!recent.length) { recentTbody.innerHTML = '<tr><td class="empty-row" colspan="4">No recent errors.</td></tr>'; return; }
+    recentTbody.innerHTML = recent.map(r => `<tr>
+      <td style="color:var(--muted);white-space:nowrap">${r.ts ? timeAgo(r.ts) : "—"}</td>
+      <td><span style="color:var(--red);font-family:monospace;font-weight:700">${esc(r.error_code)}</span></td>
+      <td class="td-mono">${esc(r.model || "—")}</td>
+      <td style="color:var(--muted);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.detail||"")}">${esc((r.detail||"").slice(0,80))}</td>
+    </tr>`).join("");
+  } catch(_) {}
+}
+
 // API ACTIONS — KEYS
 // ═══════════════════════════════════════════════════════════════════════════════
 async function addKey(provider_id) {
@@ -1284,7 +1410,7 @@ function switchTab(el) {
   document.querySelectorAll(".nav-tab").forEach(t => t.classList.remove("active"));
   el.classList.add("active");
 
-  ["overview","models","clients","errors","keys","providers","mappings"].forEach(t => {
+  ["overview","models","clients","errors","keys","providers","mappings","tokens","errorlog"].forEach(t => {
     const pane = document.getElementById(`tab-${t}`);
     if (pane) pane.style.display = (t === tab) ? "" : "none";
   });

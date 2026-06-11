@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Access Required</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#0a0f1e;color:#e2e8f0;
+  min-height:100vh;display:flex;align-items:center;justify-content:center}
+.card{background:#111827;border:1px solid #1e2d45;border-radius:20px;padding:3rem 2.5rem;
+  max-width:400px;width:90%;text-align:center;box-shadow:0 25px 60px #00000050}
+.card .icon{font-size:3rem;margin-bottom:1.2rem}
+.card h1{font-size:1.4rem;font-weight:700;margin-bottom:.5rem}
+.card p{color:#64748b;font-size:.9rem;margin-bottom:1.8rem}
+.card input{width:100%;padding:.85rem 1rem;background:#1e293b;border:1px solid #2d3f58;
+  border-radius:10px;color:#e2e8f0;font-size:1rem;outline:none;text-align:center;
+  letter-spacing:2px;transition:border-color .2s}
+.card input:focus{border-color:#6366f1}
+.card button{margin-top:1rem;width:100%;padding:.8rem;background:#6366f1;color:#fff;
+  border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;transition:background .15s}
+.card button:hover{background:#4f46e5}
+.card button:disabled{opacity:.6;cursor:not-allowed}
+.error{color:#ef4444;font-size:.85rem;margin-top:.8rem;display:none}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="icon">🔐</div>
+  <h1>AI Proxy · Access Required</h1>
+  <p>This space is password-protected. Enter the password to continue.</p>
+  <form onsubmit="return unlock(event)">
+    <input type="password" id="pw" placeholder="••••••••••" autofocus required>
+    <button type="submit" id="btn">Unlock</button>
+    <div class="error" id="err">Incorrect password. Try again.</div>
+  </form>
+</div>
+<script>
+async function unlock(e) {
+  e.preventDefault();
+  const pw=document.getElementById("pw").value;
+  const btn=document.getElementById("btn");
+  const err=document.getElementById("err");
+  btn.disabled=true;btn.textContent="Checking…";
+  err.style.display="none";
+  try{
+    const r=await fetch("/_unlock",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw})});
+    if(r.ok)location.reload();
+    else{err.style.display="block";btn.disabled=false;btn.textContent="Unlock"}
+  }catch(_){err.textContent="Network error";err.style.display="block";btn.disabled=false;btn.textContent="Unlock"}
+}
+</script>
+</body>
+</html>

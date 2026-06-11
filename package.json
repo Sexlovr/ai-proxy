@@ -1,7 +1,7 @@
 {
   "name": "ai-proxy",
-  "version": "1.0.0",
-  "description": "OpenAI-compatible proxy",
+  "version": "2.0.0",
+  "description": "OpenAI-compatible proxy with token tracking",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
