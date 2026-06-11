@@ -5,11 +5,9 @@ RUN apt-get update && \
     apt-get install -y python3 make g++ git && \
     rm -rf /var/lib/apt/lists/*
 
-# Hugging Face Docker Spaces run containers with UID 1000
-RUN useradd -m -u 1000 user
-
-# Persistent storage — HF Spaces automatically mounts /data as a volume
-RUN mkdir -p /data && chown -R user:user /data
+# /data is the Hugging Face persistent volume mount point
+# node:20-slim already has 'node' user with UID 1000
+RUN mkdir -p /data && chown -R node:node /data
 
 # Clone & install the proxy globally from GitHub
 RUN npm install -g github:Sexlovr/ai-proxy
@@ -18,7 +16,7 @@ RUN npm install -g github:Sexlovr/ai-proxy
 ENV DATA_DIR=/data
 ENV PORT=7860
 ENV NODE_ENV=production
-ENV HOME=/home/user
+ENV HOME=/home/node
 
 WORKDIR /usr/local/lib/node_modules/ai-proxy
 EXPOSE 7860
@@ -47,5 +45,5 @@ node server.js &
 wait $!
 EOF
 
-USER user
+USER node
 CMD ["/usr/local/bin/entrypoint.sh"]
