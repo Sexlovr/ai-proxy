@@ -171,7 +171,6 @@ app.use((req, _res, next) => {
   next();
 });
 app.use(express.json({ limit: "10mb" }));
-app.use(express.static(path.join(__dirname, "public")));
 
 // ─── SPACE GATE ────────────────────────────────────
 function requireSpaceAuth(req, res, next) {
@@ -187,6 +186,7 @@ function requireSpaceAuth(req, res, next) {
   return res.status(403).json(ERR[403]);
 }
 app.use(requireSpaceAuth);
+app.use(express.static(path.join(__dirname, "public")));
 
 app.post("/_unlock", (req, res) => {
   const { password } = req.body || {};
