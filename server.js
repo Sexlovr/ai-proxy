@@ -176,8 +176,10 @@ app.use(express.static(path.join(__dirname, "public")));
 // ─── SPACE GATE ────────────────────────────────────
 function requireSpaceAuth(req, res, next) {
   if (!SPACE_PASSWORD) return next();
+  if (req.path === "/_unlock") return next();
   if (req.path.startsWith("/v1/") || req.path === "/v1/models") return next();
-  if (req.path.startsWith("/admin") && req.method !== "GET") return next();
+  if (req.path.startsWith("/admin")) return next();
+  if (req.path === "/health") return next();
   if (req.cookies?.space_token === SPACE_PASSWORD) return next();
   if (req.query.space_key === SPACE_PASSWORD) return next();
   if (req.method === "GET" && (req.path === "/" || req.path.endsWith(".html") || req.path === ""))
@@ -190,7 +192,7 @@ app.post("/_unlock", (req, res) => {
   const { password } = req.body || {};
   if (!SPACE_PASSWORD) return res.json({ ok: true });
   if (password !== SPACE_PASSWORD) return res.status(403).json({ error: "Incorrect password" });
-  res.setHeader("Set-Cookie", `space_token=${SPACE_PASSWORD}; HttpOnly; SameSite=Strict; Max-Age=86400; Path=/; Secure`);
+  res.setHeader("Set-Cookie", `space_token=${SPACE_PASSWORD}; HttpOnly; SameSite=Lax; Max-Age=86400; Path=/`);
   res.json({ ok: true });
 });
 

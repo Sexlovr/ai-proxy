@@ -6,7 +6,6 @@ RUN apt-get update && \
 
 RUN npm install -g github:Sexlovr/ai-proxy
 
-ENV DATA_DIR=/data/proxy
 ENV PORT=7860
 ENV NODE_ENV=production
 ENV HOME=/home/node
@@ -18,7 +17,14 @@ RUN cat << 'EOF' > /usr/local/bin/entrypoint.sh && chmod +x /usr/local/bin/entry
 #!/bin/bash
 set -e
 
-mkdir -p /data/proxy
+# Try /data first, fall back to local dir
+if [ -d /data ] && [ -w /data ]; then
+  export DATA_DIR=/data/proxy
+  mkdir -p /data/proxy 2>/dev/null || true
+else
+  export DATA_DIR=/usr/local/lib/node_modules/ai-proxy/data
+  echo "[startup] /data not writable, using local storage (data lost on sleep)"
+fi
 
 cleanup() {
   echo "[shutdown] running WAL checkpoint..."
@@ -26,7 +32,7 @@ cleanup() {
   node -e "
     try {
       const D = require('better-sqlite3');
-      const d = new D('/data/proxy/proxy.db');
+      const d = new D(process.env.DATA_DIR + '/proxy.db');
       d.pragma('wal_checkpoint(TRUNCATE)');
       d.close();
       console.log('[shutdown] checkpoint done');
@@ -38,7 +44,7 @@ cleanup() {
 }
 trap cleanup SIGTERM SIGINT
 
-echo '[startup] DATA_DIR=/data/proxy'
+echo "[startup] DATA_DIR=$DATA_DIR"
 node server.js &
 wait $!
 EOF
