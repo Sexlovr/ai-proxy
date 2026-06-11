@@ -14,8 +14,7 @@ function pickDataDir() {
       console.log("[db] using explicit DATA_DIR: " + envDataDir);
       return envDataDir;
     } catch (err) {
-      console.error("[db] FATAL: DATA_DIR not writable: " + err.message);
-      process.exit(1);
+      console.warn("[db] DATA_DIR not writable: " + err.message + " — falling back");
     }
   }
   for (const dir of ["/data", path.join(__dirname, "..", "data")]) {
