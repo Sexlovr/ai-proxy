@@ -1,15 +1,15 @@
 {
   "name": "ai-proxy",
-  "version": "2.0.0",
-  "description": "OpenAI-compatible proxy with token tracking",
+  "version": "3.0.0",
+  "description": "OpenAI-compatible proxy with HF Storage Bucket persistence, advanced multi-provider round-robin and zero-latency token counting",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "better-sqlite3": "^9.6.0",
     "cors": "^2.8.5",
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "gpt-tokenizer": "^2.5.0"
   },
   "engines": {
     "node": ">=18.0.0"

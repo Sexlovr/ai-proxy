@@ -1,18 +1,21 @@
+# Local / non-HuggingFace Docker build (uses an ephemeral container /data dir).
+# For HF Spaces, use Dockerfile.hf instead.
 FROM node:20-slim
+ENV NODE_ENV=production PORT=7860 DATA_DIR=/data HOME=/home/node
 
-RUN apt-get update && \
-    apt-get install -y python3 make g++ git && \
-    rm -rf /var/lib/apt/lists/*
+RUN mkdir -p /home/node/app /data && chown -R node:node /home/node/app && chmod 777 /data
 
-RUN npm install -g github:Sexlovr/ai-proxy
+USER node
+WORKDIR /home/node/app
 
-RUN mkdir -p /data && chmod 777 /data
+COPY --chown=node:node package.json ./
+RUN npm install --omit=dev
 
-ENV PORT=7860
-ENV NODE_ENV=production
-ENV DATA_DIR=/data
+COPY --chown=node:node server.js ./server.js
+COPY --chown=node:node store ./store
+COPY --chown=node:node lib ./lib
+COPY --chown=node:node admin ./admin
+COPY --chown=node:node public ./public
 
-WORKDIR /usr/local/lib/node_modules/ai-proxy
 EXPOSE 7860
-
 CMD ["node", "server.js"]

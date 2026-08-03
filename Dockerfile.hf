@@ -1,49 +1,50 @@
+# ── ai-proxy · Hugging Face Space image ──────────────────────────────
+# Deploys the proxy inside an HF Docker Space with a Storage Bucket
+# volume mounted at /data (read-write). See https://huggingface.co/docs/hub/storage-buckets
+# and https://huggingface.co/docs/hub/storage-buckets-access ("Volume mounts in Jobs and Spaces").
+#
+# To enable persistence:
+#   1. Create a Storage Bucket at huggingface.co/new-bucket  (e.g. <user>/ai-proxy-data)
+#   2. Attach it to this Space as a volume:
+#        hf spaces volumes set <user>/<space-name> \
+#          -v hf://buckets/<user>/ai-proxy-data:/data
+#   The bucket is mounted read-write at /data on every restart. All
+#   proxy state, logs and counters live under /data.
+#
+# Notes:
+#   * /data is only available at runtime (never during build).
+#   * HF Spaces run the container as UID 1000; /data must be writable by it.
+#   * No native deps → image stays tiny and rebuilds are fast.
+
 FROM node:20-slim
 
-# Build tools for better-sqlite3 native compilation + git for npm clone
-RUN apt-get update && \
-    apt-get install -y python3 make g++ git && \
-    rm -rf /var/lib/apt/lists/*
+ENV NODE_ENV=production \
+    PORT=7860 \
+    DATA_DIR=/data \
+    HOME=/home/node
 
-# /data is the Hugging Face persistent volume mount point
-# node:20-slim already has 'node' user with UID 1000
-RUN mkdir -p /data && chown -R node:node /data
+# /data mount-point — pre-created + world-writable (HF mounts on top of it).
+# A recursive chown on /data would be wasteful; we only create the empty dir.
+RUN mkdir -p /data && chmod 777 /data
 
-# Clone & install the proxy globally from GitHub
-RUN npm install -g github:Sexlovr/ai-proxy
-
-# ─── Environment ─────────────────────────────────────────────────────
-ENV DATA_DIR=/data
-ENV PORT=7860
-ENV NODE_ENV=production
-ENV HOME=/home/node
-
-WORKDIR /usr/local/lib/node_modules/ai-proxy
-EXPOSE 7860
-
-# ─── Entrypoint with graceful shutdown ───────────────────────────────
-RUN cat << 'EOF' > /usr/local/bin/entrypoint.sh && chmod +x /usr/local/bin/entrypoint.sh
-#!/bin/bash
-cleanup() {
-  echo "[shutdown] running WAL checkpoint..."
-  cd /usr/local/lib/node_modules/ai-proxy
-  node -e "
-    try {
-      const D = require('better-sqlite3');
-      const d = new D('/data/proxy.db');
-      d.pragma('wal_checkpoint(TRUNCATE)');
-      d.close();
-      console.log('[shutdown] checkpoint done');
-    } catch(e) {
-      console.error(e.message);
-    }
-  "
-  exit 0
-}
-trap cleanup SIGTERM SIGINT
-node server.js &
-wait $!
-EOF
+# App lives in $HOME/app (UID 1000 home).
+RUN mkdir -p /home/node/app && chown -R node:node /home/node/app
 
 USER node
-CMD ["/usr/local/bin/entrypoint.sh"]
+WORKDIR /home/node/app
+
+# Install local deps (no native build needed).
+COPY --chown=node:node package.json ./
+RUN npm install --omit=dev
+
+# Copy source.
+COPY --chown=node:node server.js ./server.js
+COPY --chown=node:node store ./store
+COPY --chown=node:node lib ./lib
+COPY --chown=node:node admin ./admin
+COPY --chown=node:node public ./public
+
+EXPOSE 7860
+
+# Graceful shutdown: flush any debounced state writes before exit.
+CMD ["node", "server.js"]
