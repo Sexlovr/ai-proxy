@@ -155,10 +155,22 @@ const state = {
   state:     Object.assign(newState(), readJson(fp("state"), {})),
 };
 
+// Validate loaded state — protect against corrupted/malformed files in the bucket
+// (e.g. a test file accidentally uploaded as providers.json)
+if (!Array.isArray(state.providers)) state.providers = [];
+if (!Array.isArray(state.apiKeys))   state.apiKeys = [];
+if (!Array.isArray(state.mappings))  state.mappings = [];
+if (!Array.isArray(state.groups))    state.groups = [];
+if (typeof state.sessions !== "object" || state.sessions === null || Array.isArray(state.sessions)) state.sessions = {};
+state.providers = state.providers.filter(p => p && typeof p === "object" && p.provider_id);
+state.apiKeys   = state.apiKeys.filter(k => k && typeof k === "object" && k.key_value);
+state.mappings  = state.mappings.filter(m => m && typeof m === "object" && m.clean_name);
+state.groups    = state.groups.filter(g => g && typeof g === "object" && g.clean_name);
+
 // Normalize / migrate any half-broken state.json
-if (!state.state.cursors) state.state.cursors = {};
-if (!state.state.allTime) state.state.allTime = { totalRequests:0, totalErrors:0, promptTokens:0, completionTokens:0, totalTokens:0 };
-if (!state.state.hourly)  state.state.hourly  = {};
+if (!state.state.cursors || typeof state.state.cursors !== "object") state.state.cursors = {};
+if (!state.state.allTime || typeof state.state.allTime !== "object") state.state.allTime = { totalRequests:0, totalErrors:0, promptTokens:0, completionTokens:0, totalTokens:0 };
+if (!state.state.hourly || typeof state.state.hourly !== "object")  state.state.hourly  = {};
 
 // Seed default provider if none defined and an env UPSTREAM_BASE was given.
 if (state.providers.length === 0 && process.env.UPSTREAM_BASE && process.env.UPSTREAM_BASE.trim()) {
