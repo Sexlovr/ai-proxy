@@ -28,6 +28,46 @@ const fs   = require("fs");
 const path = require("path");
 const os   = require("os");
 const crypto = require("crypto");
+const { execSync, exec } = require("child_process");
+
+// ─── HF bucket sync (bypasses FUSE unreliability) ──────────────────────────
+// The FUSE mount at /data is unreliable — writes may not reach the bucket.
+// We use `hf buckets sync` CLI as a backup/restore layer: sync FROM the bucket
+// on startup, sync TO the bucket periodically (debounced) and on shutdown.
+const HF_TOKEN  = process.env.HF_TOKEN || "";
+const HF_BUCKET = process.env.HF_BUCKET || "";  // e.g. "Lolmaobruhhh/FAP-storage"
+
+function bucketSyncFrom() {
+  if (!HF_TOKEN || !HF_BUCKET) return;
+  try {
+    console.log("[store] restoring from bucket:", HF_BUCKET);
+    execSync(`hf buckets sync "hf://buckets/${HF_BUCKET}/" "${DATA_DIR}/" --ignore-times`, {
+      timeout: 30000, stdio: "pipe", env: { ...process.env, HF_TOKEN }
+    });
+    console.log("[store] bucket restore complete");
+  } catch (e) { console.warn("[store] bucket restore failed:", e.message); }
+}
+
+function bucketSyncTo() {
+  if (!HF_TOKEN || !HF_BUCKET) return;
+  try {
+    execSync(`hf buckets sync "${DATA_DIR}/" "hf://buckets/${HF_BUCKET}/" --ignore-times`, {
+      timeout: 30000, stdio: "pipe", env: { ...process.env, HF_TOKEN }
+    });
+  } catch (e) { console.warn("[store] bucket sync failed:", e.message); }
+}
+
+let _bucketSyncTimer = null;
+function scheduleBucketSync() {
+  if (!HF_TOKEN || !HF_BUCKET) return;
+  if (_bucketSyncTimer) return;
+  _bucketSyncTimer = setTimeout(() => {
+    _bucketSyncTimer = null;
+    exec(`hf buckets sync "${DATA_DIR}/" "hf://buckets/${HF_BUCKET}/" --ignore-times`, {
+      timeout: 30000, env: { ...process.env, HF_TOKEN }
+    }, (err) => { if (err) console.warn("[store] bucket sync error:", err.message); });
+  }, 5000);
+}
 
 // ─── pickDataDir ──────────────────────────────────────────────────────────
 function pickDataDir() {
@@ -52,14 +92,22 @@ function pickDataDir() {
 const DATA_DIR = pickDataDir();
 const LOG_DIR  = path.join(DATA_DIR, "logs");
 
+// Restore state from the HF bucket BEFORE loading into memory — if FUSE
+// isn't synced, this ensures we see data written in a previous run.
+bucketSyncFrom();
+
 const NOW = () => Math.floor(Date.now() / 1000);
 
 // ─── atomic, NFS-safe write ────────────────────────────────────────────────
 function atomicWrite(file, obj) {
   const data = JSON.stringify(obj, null, 2);
   const tmp = file + ".tmp." + process.pid;
-  fs.writeFileSync(tmp, data, "utf8");
-  fs.renameSync(tmp, file);     // atomic on POSIX, including NFS within same volume
+  const fd = fs.openSync(tmp, "w");
+  fs.writeSync(fd, data);
+  fs.fsyncSync(fd);
+  fs.closeSync(fd);
+  fs.renameSync(tmp, file);
+  scheduleBucketSync();
 }
 function readJson(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, "utf8")); }
@@ -145,8 +193,8 @@ function debounce(key, ms, writeFn) {
 const FLUSH_MS = 500;
 function persistStateNow()  { atomicWrite(fp("state"),    state.state); }
 function persistApiKeysNow() { atomicWrite(fp("apiKeys"),  state.apiKeys); }
-function markStateDirty()    { debounce("state",    FLUSH_MS, persistStateNow); }
-function markKeysDirty()     { debounce("apiKeys",  FLUSH_MS, persistApiKeysNow); }
+function markStateDirty()    { debounce("state",    FLUSH_MS, persistStateNow); scheduleBucketSync(); }
+function markKeysDirty()     { debounce("apiKeys",  FLUSH_MS, persistApiKeysNow); scheduleBucketSync(); }
 function persistAllNow() {
   for (const k of Object.keys(timers)) { clearTimeout(timers[k]); delete timers[k]; }
   atomicWrite(fp("state"),    state.state);
@@ -155,8 +203,10 @@ function persistAllNow() {
 }
 process.on("SIGTERM", shutdown);
 process.on("SIGINT",  shutdown);
+process.on("exit",    () => { try { persistAllNow(); } catch (_) {} });
 function shutdown() {
   try { persistAllNow(); } catch (_) {}
+  try { bucketSyncTo();   } catch (_) {}
   console.log("[store] flushed & exiting");
   process.exit(0);
 }

@@ -1,50 +1,46 @@
 # ── ai-proxy · Hugging Face Space image ──────────────────────────────
 # Deploys the proxy inside an HF Docker Space with a Storage Bucket
 # volume mounted at /data (read-write). See https://huggingface.co/docs/hub/storage-buckets
-# and https://huggingface.co/docs/hub/storage-buckets-access ("Volume mounts in Jobs and Spaces").
 #
-# To enable persistence:
-#   1. Create a Storage Bucket at huggingface.co/new-bucket  (e.g. <user>/ai-proxy-data)
-#   2. Attach it to this Space as a volume:
-#        hf spaces volumes set <user>/<space-name> \
-#          -v hf://buckets/<user>/ai-proxy-data:/data
-#   The bucket is mounted read-write at /data on every restart. All
-#   proxy state, logs and counters live under /data.
+# Persistence uses DUAL layers:
+#   1. FUSE mount at /data (primary, fast reads/writes)
+#   2. `hf buckets sync` CLI (backup, bypasses FUSE if it's broken)
+# On startup: sync FROM bucket → /data. On writes: debounced sync TO bucket.
+# On shutdown: final sync TO bucket.
 #
-# Notes:
-#   * /data is only available at runtime (never during build).
-#   * HF Spaces run the container as UID 1000; /data must be writable by it.
-#   * No native deps → image stays tiny and rebuilds are fast.
+# Required Space secrets:
+#   HF_TOKEN   — HF access token with write permission (for bucket sync)
+#   HF_BUCKET  — bucket name, e.g. "Lolmaobruhhh/FAP-storage"
+#   PROXY_KEY  — downstream API key (for /v1/* + model UI gate)
+#   ADMIN_PASSWORD — admin panel password
+#
+# To attach a Storage Bucket:
+#   hf spaces volumes set <user>/<space> -v hf://buckets/<user>/<bucket>:/data
 
 FROM node:20-slim
 
-ENV NODE_ENV=production \
-    PORT=7860 \
+# Install git (npm from GitHub) + Python + pip (for hf CLI bucket sync)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git python3 python3-pip && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install huggingface_hub (provides `hf` CLI for bucket sync)
+RUN pip3 install --no-cache-dir --break-system-packages huggingface_hub
+
+# Install the proxy from GitHub
+RUN npm install -g github:Sexlovr/ai-proxy
+
+# /data is the HF Storage Bucket FUSE mount point
+RUN mkdir -p /data && chmod 777 /data
+
+ENV PORT=7860 \
+    NODE_ENV=production \
     DATA_DIR=/data \
     HOME=/home/node
 
-# /data mount-point — pre-created + world-writable (HF mounts on top of it).
-# A recursive chown on /data would be wasteful; we only create the empty dir.
-RUN mkdir -p /data && chmod 777 /data
-
-# App lives in $HOME/app (UID 1000 home).
-RUN mkdir -p /home/node/app && chown -R node:node /home/node/app
-
-USER node
-WORKDIR /home/node/app
-
-# Install local deps (no native build needed).
-COPY --chown=node:node package.json ./
-RUN npm install --omit=dev
-
-# Copy source.
-COPY --chown=node:node server.js ./server.js
-COPY --chown=node:node store ./store
-COPY --chown=node:node lib ./lib
-COPY --chown=node:node admin ./admin
-COPY --chown=node:node public ./public
-
+WORKDIR /usr/local/lib/node_modules/ai-proxy
 EXPOSE 7860
 
-# Graceful shutdown: flush any debounced state writes before exit.
-CMD ["node", "server.js"]
+# start.sh: restore from bucket → start node → sync to bucket on shutdown
+RUN chmod +x start.sh
+CMD ["bash", "start.sh"]
