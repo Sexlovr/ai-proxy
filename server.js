@@ -254,46 +254,77 @@ app.all("/v1/*", requireProxyAuth, async (req, res) => {
     const strippedPath = req.path.replace(/^\/v1/, "");
     const qs = req.url.includes("?") ? "?" + req.url.slice(req.url.indexOf("?") + 1) : "";
 
-    // 3) Cursor-based round-robin retry loop with raw pass-through fetch per slot.
+    // 3) Cursor-based round-robin retry loop with error collection.
+    //    Retries on ANY error (429, 5xx, network) — not just 429.
+    //    2 full passes through all slots; 400 returns immediately.
+    //    If all fail, collected errors are returned to the client.
     let cursor = store.getCursor(cursorName);
-    let upstreamRes = null, lastWas429 = false;
-    for (let i = 0; i < slots.length; i++) {
-      const idx = (cursor + i) % slots.length;
-      const slot = slots[idx];
-      const thisBody = (slot.upstream_model_id && originalModel && typeof req.body === "object" && req.body && req.body.model !== undefined)
-        ? JSON.stringify({ ...req.body, model: slot.upstream_model_id })
-        : bodyToSend;
-      const upstreamUrl = slot.url + strippedPath + qs;
-      const headers = {
-        "content-type": "application/json",
-        "accept":       req.headers["accept"] || "application/json",
-        "authorization": `Bearer ${slot.key}`,
-      };
-      let r;
-      try {
-        r = await fetch(upstreamUrl, { method: req.method, headers, body: ["GET","HEAD"].includes(req.method) ? undefined : thisBody, duplex: "half" });
-      } catch (e) {
-        // network/upstream unreachable — try next slot, but record the error
-        store.logErrorRecord("fetch_error", originalModel || logModel, slot.provider_id, e.message);
-        continue;
+    let upstreamRes = null;
+    const collectedErrors = [];
+    const MAX_PASSES = 2;
+
+    retryLoop:
+    for (let pass = 0; pass < MAX_PASSES; pass++) {
+      for (let i = 0; i < slots.length; i++) {
+        const idx = (cursor + i) % slots.length;
+        const slot = slots[idx];
+        logProvider = slot.provider_id;
+        const thisBody = (slot.upstream_model_id && originalModel && typeof req.body === "object" && req.body && req.body.model !== undefined)
+          ? JSON.stringify({ ...req.body, model: slot.upstream_model_id })
+          : bodyToSend;
+        const upstreamUrl = slot.url + strippedPath + qs;
+        const headers = {
+          "content-type": "application/json",
+          "accept":       req.headers["accept"] || "application/json",
+          "authorization": `Bearer ${slot.key}`,
+        };
+        let r;
+        try {
+          r = await fetch(upstreamUrl, { method: req.method, headers, body: ["GET","HEAD"].includes(req.method) ? undefined : thisBody, duplex: "half" });
+        } catch (e) {
+          collectedErrors.push({ pass: pass + 1, provider: slot.provider_id, status: 0, message: e.message });
+          store.logErrorRecord("fetch_error", logModel, slot.provider_id, e.message);
+          continue;
+        }
+        if (r.status === 429) store.bumpKey429(slot.provider_id, slot.key);
+
+        if (r.status === 400) {
+          upstreamRes = r;
+          store.setCursor(cursorName, (idx + 1) % slots.length);
+          store.bumpKeyUsed(slot.provider_id, slot.key);
+          break retryLoop;
+        }
+
+        if (r.status >= 401) {
+          let errBody = null;
+          try { errBody = await r.text(); } catch (_) {}
+          let errMsg = "HTTP " + r.status;
+          if (errBody) { try { const j = JSON.parse(errBody); errMsg = (j && j.error && j.error.message) || errMsg; } catch (_) { errMsg = errBody.slice(0, 200); } }
+          collectedErrors.push({ pass: pass + 1, provider: slot.provider_id, status: r.status, message: errMsg });
+          continue;
+        }
+
+        upstreamRes = r;
+        store.setCursor(cursorName, (idx + 1) % slots.length);
+        store.bumpKeyUsed(slot.provider_id, slot.key);
+        break retryLoop;
       }
-      if (r.status === 429) {
-        store.bumpKey429(slot.provider_id, slot.key);
-        upstreamRes = r; lastWas429 = true;
-        continue;
-      }
-      upstreamRes = r; lastWas429 = false;
-      logProvider = slot.provider_id; logSlotKeyIdx = slot.keyIdx;
-      store.setCursor(cursorName, (idx + 1) % slots.length);
-      store.bumpKeyUsed(slot.provider_id, slot.key);
-      break;
     }
 
-    if (lastWas429 || !upstreamRes) {
-      store.setCursor(cursorName, cursor); // wrap safe; all keys 429: re-wrap cursor to start.
-      store.logRequest({ model: logModel, provider_id: logProvider, success: false, error_type: "429", response_ms: Date.now() - startMs, userAgent: ua });
-      store.logErrorRecord("429", logModel, logProvider, "All keys rate-limited");
-      return res.status(429).json(ERR[429]);
+    if (!upstreamRes) {
+      store.setCursor(cursorName, (cursor + 1) % slots.length);
+      const all429 = collectedErrors.length > 0 && collectedErrors.every(e => e.status === 429);
+      const failStatus = all429 ? 429 : 502;
+      store.logRequest({ model: logModel, provider_id: logProvider, success: false, error_type: all429 ? "429" : "all_failed", response_ms: Date.now() - startMs, userAgent: ua });
+      store.logErrorRecord(all429 ? "429" : "all_failed", logModel, logProvider, collectedErrors.length + " attempts failed");
+      return res.status(failStatus).json({
+        error: {
+          message: "All upstream providers failed after " + collectedErrors.length + " attempt" + (collectedErrors.length !== 1 ? "s" : ""),
+          type: all429 ? "rate_limit_error" : "api_error",
+          code: String(failStatus),
+          details: collectedErrors.map(e => "[pass " + e.pass + "] " + (e.status || "NET") + ": " + e.message)
+        }
+      });
     }
 
     // 4) Forward the response — stream or non-stream.
