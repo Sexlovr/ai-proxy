@@ -7,13 +7,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
 RUN npm install -g git+https://github.com/Sexlovr/ai-proxy.git
 
 # /data is the HF Storage Bucket FUSE mount point.
-# Must be owned by UID 1000 (the user HF Spaces runs the container as).
-# Using chmod 777 does NOT work — the FUSE mount checks the real UID.
-RUN mkdir -p /data && chown -R node:node /data
-
+# Do NOT create /data in the Dockerfile — let the FUSE mount own it.
+# If we mkdir /data here, the FUSE mount overlays it with its own permissions
+# which may not match what the process expects.
 ENV PORT=7860 NODE_ENV=production DATA_DIR=/data HOME=/home/node
 
-USER node
 WORKDIR /usr/local/lib/node_modules/ai-proxy
 EXPOSE 7860
 CMD ["node", "server.js"]
