@@ -2,9 +2,9 @@
 # Bucket mounted at /data via Space Settings → Volumes.
 FROM node:20-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g github:Sexlovr/ai-proxy
+RUN npm install -g git+https://github.com/Sexlovr/ai-proxy.git
 
 RUN mkdir -p /data && chmod 777 /data
 
