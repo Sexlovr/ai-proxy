@@ -1,46 +1,15 @@
-# ── ai-proxy · Hugging Face Space image ──────────────────────────────
-# Deploys the proxy inside an HF Docker Space with a Storage Bucket
-# volume mounted at /data (read-write). See https://huggingface.co/docs/hub/storage-buckets
-#
-# Persistence uses DUAL layers:
-#   1. FUSE mount at /data (primary, fast reads/writes)
-#   2. `hf buckets sync` CLI (backup, bypasses FUSE if it's broken)
-# On startup: sync FROM bucket → /data. On writes: debounced sync TO bucket.
-# On shutdown: final sync TO bucket.
-#
-# Required Space secrets:
-#   HF_TOKEN   — HF access token with write permission (for bucket sync)
-#   HF_BUCKET  — bucket name, e.g. "Lolmaobruhhh/FAP-storage"
-#   PROXY_KEY  — downstream API key (for /v1/* + model UI gate)
-#   ADMIN_PASSWORD — admin panel password
-#
-# To attach a Storage Bucket:
-#   hf spaces volumes set <user>/<space> -v hf://buckets/<user>/<bucket>:/data
-
+# ai-proxy · Hugging Face Space image
+# Bucket mounted at /data via Space Settings → Volumes.
 FROM node:20-slim
 
-# Install git (npm from GitHub) + Python + pip (for hf CLI bucket sync)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git python3 python3-pip && \
-    rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 
-# Install huggingface_hub (provides `hf` CLI for bucket sync)
-RUN pip3 install --no-cache-dir --break-system-packages huggingface_hub
-
-# Install the proxy from GitHub
 RUN npm install -g github:Sexlovr/ai-proxy
 
-# /data is the HF Storage Bucket FUSE mount point
 RUN mkdir -p /data && chmod 777 /data
 
-ENV PORT=7860 \
-    NODE_ENV=production \
-    DATA_DIR=/data \
-    HOME=/home/node
+ENV PORT=7860 NODE_ENV=production DATA_DIR=/data HOME=/home/node
 
 WORKDIR /usr/local/lib/node_modules/ai-proxy
 EXPOSE 7860
-
-# start.sh: restore from bucket → start node → sync to bucket on shutdown
-RUN chmod +x start.sh
-CMD ["bash", "start.sh"]
+CMD ["node", "server.js"]
