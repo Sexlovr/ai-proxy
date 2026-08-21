@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#070b16">
+<title>Sign in — NexusAI</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#070b16;--card:#101830;--line:#1e2a4a;--txt:#eef2ff;--mut:#8b95b9;--mut2:#a5b0d4;
+    --brand:#5865f2;--grad:linear-gradient(135deg,#5865f2 0%,#7c5cf0 50%,#4cc9f0 100%);
+    --red:#f87171;--green:#34d399;
+  }
+  body{
+    font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;
+    background:radial-gradient(1000px 700px at 50% -15%,#141d3d 0%,var(--bg) 65%);
+    color:var(--txt);min-height:100vh;display:flex;align-items:center;justify-content:center;
+    padding:1.2rem;overflow-x:hidden;
+  }
+  .orb{position:fixed;border-radius:50%;filter:blur(100px);opacity:.15;pointer-events:none}
+  .orb.a{width:420px;height:420px;background:#5865f2;top:-160px;left:-100px}
+  .orb.b{width:340px;height:340px;background:#4cc9f0;bottom:-140px;right:-100px}
+
+  .card{
+    position:relative;width:min(420px,100%);background:linear-gradient(180deg,#111a36,#0c1326);
+    border:1px solid var(--line);border-radius:20px;padding:2.6rem 2.2rem;
+    box-shadow:0 30px 80px #00000066;text-align:center;
+  }
+  .logo{display:inline-flex;align-items:center;gap:.5rem;font-weight:800;font-size:1.2rem;text-decoration:none;color:var(--txt);margin-bottom:1.6rem}
+  .logo .mark{width:38px;height:38px;border-radius:11px;background:var(--grad);display:grid;place-items:center;font-size:1.1rem;color:#fff;box-shadow:0 4px 18px #5865f266}
+  .logo b{color:#4cc9f0}
+  h1{font-size:1.35rem;letter-spacing:-.02em;margin-bottom:.4rem}
+  .sub{color:var(--mut2);font-size:.88rem;margin-bottom:1.8rem}
+
+  .discord-btn{
+    display:flex;align-items:center;justify-content:center;gap:.6rem;width:100%;
+    padding:.9rem 1rem;background:#5865f2;color:#fff;border:none;border-radius:12px;
+    font-size:.95rem;font-weight:600;cursor:pointer;transition:background .2s,transform .15s;
+    text-decoration:none;min-height:48px;
+  }
+  .discord-btn:hover{background:#4752c4;transform:translateY(-1px)}
+  .discord-btn:active{transform:scale(.98)}
+  .discord-btn svg{flex:0 0 auto}
+
+  .divider{display:flex;align-items:center;gap:.8rem;margin:1.4rem 0;color:var(--mut);font-size:.75rem}
+  .divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--line)}
+
+  .note{color:var(--mut);font-size:.8rem;line-height:1.5}
+  .note a{color:#4cc9f0;text-decoration:none}
+
+  .msg{
+    display:none;margin-bottom:1.2rem;padding:.8rem 1rem;border-radius:12px;font-size:.84rem;
+    line-height:1.45;text-align:left;
+  }
+  .msg.show{display:block}
+  .msg.err{background:#f871711a;border:1px solid #f8717140;color:#fca5a5}
+  .msg.warn{background:#fbbf241a;border:1px solid #fbbf2440;color:#fcd34d}
+
+  .back{margin-top:1.6rem;display:inline-block;color:var(--mut);font-size:.82rem;text-decoration:none}
+  .back:hover{color:var(--txt)}
+
+  @media (max-width:440px){ .card{padding:2rem 1.4rem} }
+</style>
+</head>
+<body>
+<div class="orb a"></div><div class="orb b"></div>
+<div class="card">
+  <a class="logo" href="/"><span class="mark">◈</span>Nexus<b>AI</b></a>
+  <h1>Welcome back</h1>
+  <p class="sub">Sign in with Discord to open your personal proxy dashboard.</p>
+
+  <div class="msg err" id="errMsg"></div>
+  <div class="msg warn" id="warnMsg">Discord login isn't configured yet. The admin needs to set <b>DISCORD_CLIENT_ID</b> and <b>DISCORD_CLIENT_SECRET</b>.</div>
+
+  <a class="discord-btn" href="/auth/discord" id="loginBtn">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.369a19.79 19.79 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.865-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128c.126-.094.252-.192.372-.291a.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.418 2.157-2.418 1.21 0 2.176 1.095 2.157 2.418 0 1.334-.956 2.419-2.157 2.419zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.418 2.157-2.418 1.21 0 2.176 1.095 2.157 2.418 0 1.334-.947 2.419-2.157 2.419z"/></svg>
+    Continue with Discord
+  </a>
+
+  <div class="divider">then</div>
+  <p class="note">You must be a member of our designated Discord server. Not in it yet? <a href="/auth/discord">Try signing in</a> and we'll tell you.</p>
+
+  <a class="back" href="/">← Back to home</a>
+</div>
+
+<script>
+(function () {
+  const params = new URLSearchParams(location.search);
+  const err = params.get("error");
+  const errMsg = document.getElementById("errMsg");
+  const warn = document.getElementById("warnMsg");
+  const texts = {
+    not_configured: "Discord login isn't configured yet. Please check back later.",
+    not_member: "You're not a member of the required Discord server. Join it first, then try again.",
+    guild_check_failed: "We couldn't verify your server membership. Please try again in a moment.",
+    disabled: "Your account has been disabled by an administrator.",
+    invalid_state: "Your login session expired. Please try again.",
+    callback_failed: "Discord login failed. Please try again.",
+    access_denied: "You cancelled the Discord authorization.",
+  };
+  if (err) {
+    if (err === "not_configured") { warn.classList.add("show"); }
+    else {
+      errMsg.textContent = texts[err] || "Login failed (" + err + "). Please try again.";
+      errMsg.classList.add("show");
+    }
+  }
+})();
+</script>
+</body>
+</html>

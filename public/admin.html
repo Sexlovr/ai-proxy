@@ -246,6 +246,7 @@
       <button class="nav-tab" data-tab="providers" onclick="switchTab(this,'providers')">🌐 Providers</button>
       <button class="nav-tab" data-tab="mappings"  onclick="switchTab(this,'mappings')">🗂️ Mappings</button>
       <button class="nav-tab" data-tab="groups"    onclick="switchTab(this,'groups')">🔀 Model Groups</button>
+      <button class="nav-tab" data-tab="users"     onclick="switchTab(this,'users')">👥 Users</button>
       <button class="nav-tab" data-tab="tokens"    onclick="switchTab(this,'tokens')">📊 Tokens</button>
       <button class="nav-tab" data-tab="errorlog"  onclick="switchTab(this,'errorlog')">📋 Error Log</button>
     </nav>
@@ -381,6 +382,18 @@
       <div id="groupsContainer"></div>
     </section>
 
+    <!-- ── USERS (Discord signups) ────────────────────────────────────── -->
+    <section id="users" class="panel">
+      <div class="card-block">
+        <h3>Discord users <span class="hint">signup gate: members of the designated server</span></h3>
+        <div class="table-wrap">
+          <table><thead><tr>
+            <th>User</th><th>Discord ID</th><th>Key</th><th>Requests</th><th>Tokens</th><th>Joined</th><th>Last login</th><th>Status</th><th>Actions</th>
+          </tr></thead><tbody id="userTbody"></tbody></table>
+        </div>
+      </div>
+    </section>
+
     <!-- ── TOKENS ─────────────────────────────────────────────────────── -->
     <section id="tokens" class="panel">
       <div class="stat-grid" id="tokenStatGrid"></div>
@@ -470,6 +483,7 @@ function switchTab(btn, name){
   if (name === "tokens") loadTokens();
   if (name === "errorlog") loadErrorLog();
   if (name === "groups") renderGroups();
+  if (name === "users") loadUsers();
 }
 
 // ── window selector ──────────────────────────────────────────────────────
@@ -733,6 +747,40 @@ async function addGroup(){
 }
 async function toggleGroup(id){ await apiCall("PATCH","/admin/api/groups/"+id+"/toggle",{}); await loadDashboard(); }
 async function deleteGroup(id){ if(!confirm("Delete group entry #"+id+"?")) return; await apiCall("DELETE","/admin/api/groups/"+id); await loadDashboard(); toast("Group entry deleted"); }
+
+// ── USERS ─────────────────────────────────────────────────────────────────
+async function loadUsers(){
+  try {
+    const r = await fetch("/admin/api/users");
+    if (!r.ok) throw new Error("HTTP "+r.status);
+    const rows = await r.json();
+    document.getElementById("userTbody").innerHTML = rows.length ? rows.map(u =>
+      '<tr>'+
+        '<td><div style="display:flex;align-items:center;gap:.5rem">'+
+          (u.avatar?'<img src="'+esc(u.avatar)+'" width="26" height="26" style="border-radius:50%" onerror="this.style.display=\'none\'">':'')+  
+          '<span>'+esc(u.display_name||u.username)+'</span></div></td>'+
+        '<td class="td-mono">'+esc(u.discord_id)+'</td>'+
+        '<td class="td-mono">'+esc(u.key_preview)+'</td>'+
+        '<td>'+fmtNum(u.requests)+'</td>'+
+        '<td>'+fmtNum(u.tokens)+'</td>'+
+        '<td>'+fmtTime(u.created_at)+'</td>'+
+        '<td>'+ago(u.last_login)+'</td>'+
+        '<td><span class="pill '+(u.is_active?"ok":"err")+'">'+(u.is_active?"active":"disabled")+'</span></td>'+
+        '<td><div class="btnrow">'+
+          '<button class="btn" onclick="toggleUser('+u.id+')">'+(u.is_active?"disable":"enable")+'</button>'+
+          '<button class="btn" onclick="regenUserKey('+u.id+')">🔑 regen</button>'+
+        '</div></td>'+
+      '</tr>'
+    ).join("") : '<tr><td class="empty-row" colspan="9">No Discord users yet.</td></tr>';
+  } catch(e){ toast("Failed to load users", true); }
+}
+async function toggleUser(id){ await apiCall("PATCH","/admin/api/users/"+id+"/toggle",{}); await loadUsers(); toast("User updated"); }
+async function regenUserKey(id){
+  if(!confirm("Regenerate this user's API key? Their old key stops working immediately.")) return;
+  const r = await apiCall("POST","/admin/api/users/"+id+"/regenerate-key",{});
+  toast("New key: "+r.key.slice(0,12)+"…");
+  await loadUsers();
+}
 
 // ── TOKENS ────────────────────────────────────────────────────────────────
 async function loadTokens(){

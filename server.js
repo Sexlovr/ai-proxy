@@ -15,12 +15,15 @@ const store = require("./store/store");
 const rotation = require("./lib/rotation");
 const { StreamTap } = require("./lib/tokenCounter");
 const adminRouter = require("./admin/routes");
+const authRouter  = require("./routes/auth");
+const users = require("./lib/users");
+const discord = require("./lib/discordAuth");
 
 const PROXY_KEY    = process.env.PROXY_KEY    || "want-free-ai?here-you-go-gemini";
 const ADMIN_NOTE   = process.env.ADMIN_PASSWORD || "admin123";
 const PORT         = parseInt(process.env.PORT, 10) || 7860;
 
-console.log(`[proxy] port ${PORT} | proxy key: ${PROXY_KEY ? "SET" : "DEFAULT"} | admin: ${ADMIN_NOTE ? "SET" : "DEFAULT"}`);
+console.log(`[proxy] port ${PORT} | proxy key: ${PROXY_KEY ? "SET" : "DEFAULT"} | admin: ${ADMIN_NOTE ? "SET" : "DEFAULT"} | discord: ${discord.discordEnabled() ? "ON" : "OFF"} | guild gate: ${discord.guildGateEnabled() ? "ON" : "OFF"}`);
 
 // ── Standard errors ──────────────────────────────────────────────────────────
 const ERR = {
@@ -144,49 +147,34 @@ app.use((req, _res, next) => {
 });
 app.use(express.json({ limit: "10mb" }));
 
-// ── Gate for the web UI (model page) — uses PROXY_KEY (downstream) ───────────
-function gateApproved(req) {
-  if (req.cookies?.space_token && req.cookies.space_token === PROXY_KEY) return true;
-  if (req.headers["x-proxy-key"] === PROXY_KEY) return true;
-  const b = (req.headers["authorization"] || "").replace(/^Bearer\s+/i, "").trim();
-  if (b === PROXY_KEY) return true;
-  return false;
-}
-
-app.get("/gate.html", (_req, res) => res.sendFile(path.join(__dirname, "public", "gate.html")));
-
-app.post("/_unlock", (req, res) => {
-  const { password } = req.body || {};
-  if (!password || password !== PROXY_KEY) return res.status(403).json({ error: "Incorrect password" });
-  res.setHeader("Set-Cookie", `space_token=${encodeURIComponent(PROXY_KEY)}; HttpOnly; SameSite=Lax; Max-Age=86400; Path=/`);
-  res.json({ ok: true });
+// ── Auth + user panel (Discord) ─────────────────────────────────────────────
+app.get("/login", (_req, res) => res.sendFile(path.join(__dirname, "public", "login.html")));
+app.get("/dashboard", (req, res) => {
+  const u = authRouter.currentUser(req);
+  if (!u) return res.redirect("/login");
+  res.sendFile(path.join(__dirname, "public", "dashboard.html"));
+});
+app.use("/auth", authRouter.router);
+app.get("/api/me", authRouter.requireUser, (req, res) => {
+  res.json({ user: users.publicUser(req.user), base_url: req.protocol + "://" + req.get("host") + "/v1" });
 });
 
-app.get("/", (req, res) => {
-  if (gateApproved(req)) return res.sendFile(path.join(__dirname, "public", "index.html"));
-  res.sendFile(path.join(__dirname, "public", "gate.html"));
-});
+// ── Landing page — public marketing page for the proxy service ──────────────
+app.get("/", (_req, res) => res.sendFile(path.join(__dirname, "public", "landing.html")));
 app.get("/index.html", (_req, res) => res.redirect("/"));
-
-// /api/info reveals the downstream PROXY_KEY + base URL — only after gate cookie.
-app.get("/api/info", (req, res) => {
-  if (!gateApproved(req)) return res.status(403).json(ERR[403]);
-  res.json({
-    base_url: (req.protocol + "://" + req.get("host") + "/v1"),
-    proxy_key: PROXY_KEY,
-  });
-});
 
 app.get("/health", (_req, res) => res.json({ status: "ok", uptime: process.uptime() }));
 
 // ── Admin router (ADMIN_PASSWORD session inside) ─────────────────────────────
 app.use("/admin", adminRouter);
 
-// ── Proxy auth (downstream PROXY_KEY Bearer) ─────────────────────────────────
+// ── Proxy auth (downstream PROXY_KEY Bearer OR personal user key) ────────────
 function requireProxyAuth(req, res, next) {
   const token = (req.headers["authorization"] || "").replace(/^Bearer\s+/i, "").trim();
-  if (token !== PROXY_KEY) return res.status(401).json(ERR[401]);
-  next();
+  if (token === PROXY_KEY) { req.authKey = null; return next(); }
+  const user = users.findByKey(token);
+  if (user) { req.authKey = token; req.authUser = user; return next(); }
+  return res.status(401).json(ERR[401]);
 }
 
 // ── /v1/models  — PUBLIC OpenAI JSON ──────────────────────────────────────────
@@ -363,7 +351,7 @@ app.all("/v1/*", requireProxyAuth, async (req, res) => {
       // Background token counting — added ZERO latency: client has already
       // received every byte; encoding happens in the next event-loop tick.
       setImmediate(() => {
-        try { const t = tap.finalize(); if (t.totalTokens > 0) store.logTokenUsage(logModel, t.promptTokens, t.completionTokens, t.totalTokens); } catch (_) {}
+        try { const t = tap.finalize(); if (t.totalTokens > 0) store.logTokenUsage(logModel, t.promptTokens, t.completionTokens, t.totalTokens); if (req.authKey) users.bumpUsage(req.authKey, 1, t.totalTokens); } catch (_) {}
       });
       return;
     }
@@ -382,7 +370,7 @@ app.all("/v1/*", requireProxyAuth, async (req, res) => {
       store.logRequest({ model: logModel, provider_id: logProvider, success: false, error_type: `http_${upstreamRes.status}`, response_ms: Date.now() - startMs, userAgent: ua });
       store.logErrorRecord(String(upstreamRes.status), logModel, logProvider, "Upstream HTTP error");
       // Still count tokens even on error (some upstreams return usage on 4xx).
-      setImmediate(() => { try { const t = tap.finalize(); if (t.totalTokens > 0) store.logTokenUsage(logModel, t.promptTokens, t.completionTokens, t.totalTokens); } catch (_) {} });
+      setImmediate(() => { try { const t = tap.finalize(); if (t.totalTokens > 0) store.logTokenUsage(logModel, t.promptTokens, t.completionTokens, t.totalTokens); if (req.authKey) users.bumpUsage(req.authKey, 1, t.totalTokens); } catch (_) {} });
       return;
     }
 
@@ -396,7 +384,7 @@ app.all("/v1/*", requireProxyAuth, async (req, res) => {
     });
     res.end(outBuf);
     store.logRequest({ model: logModel, provider_id: logProvider, success: true, response_ms: Date.now() - startMs, userAgent: ua });
-    setImmediate(() => { try { const t = tap.finalize(); if (t.totalTokens > 0) store.logTokenUsage(logModel, t.promptTokens, t.completionTokens, t.totalTokens); } catch (_) {} });
+    setImmediate(() => { try { const t = tap.finalize(); if (t.totalTokens > 0) store.logTokenUsage(logModel, t.promptTokens, t.completionTokens, t.totalTokens); if (req.authKey) users.bumpUsage(req.authKey, 1, t.totalTokens); } catch (_) {} });
   } catch (err) {
     console.error("[proxy error]", err.message);
     store.logRequest({ model: logModel, provider_id: logProvider, success: false, error_type: "proxy_error", response_ms: Date.now() - startMs, userAgent: ua });

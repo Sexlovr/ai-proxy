@@ -384,7 +384,9 @@ function ensureBucket(b) {
     total: 0, ok: 0, err: 0, avgMsSum: 0, avgMsCount: 0,
     byModel: {}, byClient: {}, byError: {}, sessions: {}
   };
-  return state.state.hourly[b];
+  const bk = state.state.hourly[b];
+  if (!bk.sessions || typeof bk.sessions !== "object") bk.sessions = {};
+  return bk;
 }
 function bumpModelInBucket(b, model, ok, err, ms) {
   if (!b.byModel[model]) b.byModel[model] = { total:0, ok:0, err:0, pt:0, ct:0, tt:0, last:0, avgMsSum:0, avgMsCount:0 };
@@ -396,6 +398,8 @@ function bumpClientInBucket(b, client, sid, total) {
   const c = b.byClient[client];
   c.total += total;
   if (!c.sessions[sid]) { c.sessions[sid] = 1; c.users++; }
+  if (!b.sessions) b.sessions = {};
+  if (!b.sessions[sid]) b.sessions[sid] = 1;
 }
 function bumpErrorInBucket(b, code) { b.byError[code] = (b.byError[code] || 0) + 1; }
 
@@ -582,6 +586,7 @@ function validateSession(token) {
   if (!token) return false;
   const s = state.sessions[token];
   if (!s) return false;
+  if (!s || typeof s !== "object" || !s.expires_at) { delete state.sessions[token]; return false; }
   if (s.expires_at <= NOW()) { delete state.sessions[token]; atomicWrite(fp("sessions"), state.sessions); return false; }
   return true;
 }

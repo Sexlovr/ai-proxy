@@ -105,6 +105,21 @@ router.patch("/api/groups/:id/order", (req, res) => {
 router.patch("/api/groups/:id/toggle", (req, res) => { store.toggleGroup(+req.params.id); res.json({ ok: true }); });
 router.delete("/api/groups/:id", (req, res) => { store.deleteGroup(+req.params.id); res.json({ ok: true }); });
 
+// ── Users (Discord signups) ─────────────────────────────────────────────────
+const users = require("../lib/users");
+router.get("/api/users", (_req, res) => res.json(users.allUsersPublic()));
+router.patch("/api/users/:id/toggle", (req, res) => {
+  const u = users.readUsers().find(x => x.id === +req.params.id);
+  if (!u) return res.status(404).json({ error: "User not found" });
+  users.setActive(+req.params.id, !u.is_active);
+  res.json({ ok: true });
+});
+router.post("/api/users/:id/regenerate-key", (req, res) => {
+  const key = users.regenerateKey(+req.params.id);
+  if (!key) return res.status(404).json({ error: "User not found" });
+  res.json({ ok: true, key });
+});
+
 // ── Token usage + error log (windowed JSONL scans) ────────────────────────────
 router.get("/api/tokens", (req, res) => {
   const w = parseInt(req.query.window, 10) || 86400;
